@@ -1,0 +1,21 @@
+{
+  "name": "M-MASS Adaptive Navigation",
+  "short_name": "M-MASS Nav",
+  "description": "Indian AI Traffic Adaptive Signal & Navigation Application",
+  "start_url": "/maps.html",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#0284c7",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/854/854878.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/854/854878.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
