@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>M-MASS Adaptive Traffic Navigation</title>
+  <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet" />
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body { background: #0f172a; color: #f8fafc; display: flex; height: 100vh; overflow: hidden; }
+
+    /* Left Sidebar Panel - Vercel App Style */
+    .sidebar {
+      width: 400px; background: #1e293b; border-right: 1px solid #334155;
+      display: flex; flex-direction: column; padding: 20px; gap: 16px;
+      z-index: 10; box-shadow: 4px 0 24px rgba(0,0,0,0.4); overflow-y: auto;
+    }
+
+    .app-brand { display: flex; align-items: center; gap: 10px; font-size: 18px; font-weight: 700; color: #38bdf8; }
+    .app-brand span { background: #0284c7; color: white; padding: 2px 8px; border-radius: 6px; font-size: 11px; text-transform: uppercase; }
+
+    .form-section { background: #0f172a; border: 1px solid #334155; border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+    .field-group { display: flex; flex-direction: column; gap: 6px; }
+    .field-group label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: #94a3b8; }
+    
+    select, input {
+      width: 100%; background: #1e293b; border: 1px solid #475569; color: white;
+      padding: 10px 12px; border-radius: 8px; font-size: 14px; outline: none; transition: border-color 0.2s;
+    }
+    select:focus, input:focus { border-color: #38bdf8; }
+
+    .btn-primary {
+      background: #0284c7; color: white; border: none; padding: 12px; border-radius: 8px;
+      font-weight: 600; font-size: 14px; cursor: pointer; transition: background 0.2s;
+    }
+    .btn-primary:hover { background: #0369a1; }
+    
+    .btn-drive {
+      background: #10b981; color: white; border: none; padding: 12px; border-radius: 8px;
+      font-weight: 600; font-size: 14px; cursor: pointer; margin-top: 4px; display: none;
+    }
+    .btn-drive:hover { background: #059669; }
+
+    /* Live AI Traffic Status Card */
+    .traffic-card {
+      background: #0f172a; border: 1px solid #334155; border-radius: 12px; padding: 16px;
+      display: flex; flex-direction: column; gap: 10px;
+    }
+    .card-title { font-size: 11px; text-transform: uppercase; font-weight: 700; color: #94a3b8; }
+    
+    .timer-badge { font-size: 26px; font-weight: 800; color: #10b981; letter-spacing: -0.5px; }
+    .status-text { font-size: 13px; color: #cbd5e1; line-height: 1.4; }
+
+    .census-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 12px; background: #1e293b; padding: 10px; border-radius: 8px; }
+    .census-item { color: #94a3b8; }
+    .census-item b { color: #f8fafc; }
+
+    .alert-banner {
+      background: rgba(245, 158, 11, 0.15); border: 1px solid #f59e0b; color: #fbbf24;
+      padding: 10px 12px; border-radius: 8px; font-size: 12px; font-weight: 500; display: flex; align-items: center; gap: 8px;
+    }
+
+    /* Map Container */
+    #map { flex: 1; height: 100%; position: relative; }
+
+    /* Map Pins */
+    .pin { padding: 6px 12px; border-radius: 20px; font-weight: 700; font-size: 12px; color: white; border: 2px solid white; box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
+    .pin-start { background: #10b981; }
+    .pin-end { background: #ef4444; }
+    .pin-vehicle { background: #0284c7; font-size: 18px; border-radius: 50%; padding: 8px; }
+  </style>
+  <!-- PWA Manifest & App Metadata -->
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#0284c7">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+</head>
+<body>
+
+  <!-- Left Sidebar (App UI) -->
+  <div class="sidebar">
+    <div class="app-brand">
+      🚦 M-MASS <span>Adaptive AI</span>
+    </div>
+
+    <!-- Navigation Inputs -->
+    <div class="form-section">
+      <div class="field-group">
+        <label>1. Select Vehicle Type</label>
+        <select id="user-vehicle">
+          <option value="car">🚗 Car / Taxi (1.0 PCU)</option>
+          <option value="motorcycle">🏍️ Motorcycle / Scooter (0.5 PCU)</option>
+          <option value="autorickshaw">🛺 Auto-Rickshaw (1.0 PCU)</option>
+          <option value="bus">🚌 Bus / Heavy Vehicle (2.2 PCU)</option>
+        </select>
+      </div>
+
+      <div class="field-group">
+        <label>2. Source Location</label>
+        <input type="text" id="origin-input" placeholder="e.g. Chennai Central" value="Chennai Central">
+      </div>
+
+      <div class="field-group">
+        <label>3. Destination</label>
+        <input type="text" id="dest-input" placeholder="e.g. T. Nagar" value="T. Nagar">
+      </div>
+
+      <button class="btn-primary" onclick="startNavigation()">🧭 Start Navigation</button>
+      <button class="btn-drive" id="btn-drive" onclick="simulateDrive()">🚘 Drive to Next Signal</button>
+    </div>
+
+    <!-- Dynamic Warning Banner -->
+    <div class="alert-banner" id="alert-banner">
+      ⚠️ Metro Rail Work in 300m. Signal AI adjusting for lane merge.
+    </div>
+
+    <!-- AI Signal & Intersection Telemetry -->
+    <div class="traffic-card">
+      <div class="card-title">Approaching Intersection AI</div>
+      <div class="timer-badge" id="signal-timer">30.0s GREEN</div>
+      <div class="status-text" id="signal-reason">Optimal Route Calculated. AI clearing high density queue.</div>
+
+      <div class="census-grid">
+        <div class="census-item">🏍️ 2-Wheelers: <b id="cnt-2w">0</b></div>
+        <div class="census-item">🚗 Cars: <b id="cnt-4w">0</b></div>
+        <div class="census-item">🛺 Autos: <b id="cnt-auto">0</b></div>
+        <div class="census-item">🚌 Heavy: <b id="cnt-heavy">0</b></div>
+        <div class="census-item" style="grid-column: span 2;">🚶 Pedestrians: <b id="cnt-peds">0</b></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Map Right View -->
+  <div id="map"></div>
+
+  <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
+  <script>
+    // Known Location Coordinates
+    const locations = {
+      "chennai central": [80.2707, 13.0827],
+      "egmore": [80.2600, 13.0780],
+      "t. nagar": [80.2340, 13.0418],
+      "anna nagar": [80.2121, 13.0850],
+      "guindy": [80.2087, 13.0067],
+      "marina beach": [80.2825, 13.0500]
+    };
+
+    const map = new maplibregl.Map({
+      container: 'map',
+      style: 'https://demotiles.maplibre.org/style.json',
+      center: [80.2707, 13.0827],
+      zoom: 12
+    });
+
+    let startPin, endPin, vehiclePin;
+    let activeRoute = [];
+    let currentStep = 0;
+
+    map.on('load', () => {
+      // Add route line layer
+      map.addSource('route', {
+        'type': 'geojson',
+        'data': { 'type': 'Feature', 'geometry': { 'type': 'LineString', 'coordinates': [] } }
+      });
+
+      map.addLayer({
+        'id': 'route-line',
+        'type': 'line',
+        'source': 'route',
+        'paint': { 'line-color': '#38bdf8', 'line-width': 6 }
+      });
+
+      // Automatically trigger route for initial default values
+      startNavigation();
+
+      // Poll live AI telemetry from Python backend
+      setInterval(fetchLiveData, 1000);
+    });
+
+    // 1. Take inputs: Vehicle, Source, Destination and Render Route
+    function startNavigation() {
+      const vehicle = document.getElementById('user-vehicle').value;
+      const origin = document.getElementById('origin-input').value.trim().toLowerCase();
+      const dest = document.getElementById('dest-input').value.trim().toLowerCase();
+
+      const startCoords = locations[origin] || [80.2707, 13.0827];
+      const endCoords = locations[dest] || [80.2340, 13.0418];
+
+      // Calculate simple intermediate waypoints along the road
+      const mid1 = [startCoords[0] + (endCoords[0] - startCoords[0]) * 0.33, startCoords[1] + (endCoords[1] - startCoords[1]) * 0.33];
+      const mid2 = [startCoords[0] + (endCoords[0] - startCoords[0]) * 0.66, startCoords[1] + (endCoords[1] - startCoords[1]) * 0.66];
+      activeRoute = [startCoords, mid1, mid2, endCoords];
+
+      // Update route on map
+      map.getSource('route').setData({
+        'type': 'Feature',
+        'geometry': { 'type': 'LineString', 'coordinates': activeRoute }
+      });
+
+      // Clear existing markers
+      if (startPin) startPin.remove();
+      if (endPin) endPin.remove();
+      if (vehiclePin) vehiclePin.remove();
+
+      // Create Start Pin
+      const sEl = document.createElement('div');
+      sEl.className = 'pin pin-start';
+      sEl.innerText = 'ORIGIN';
+      startPin = new maplibregl.Marker(sEl).setLngLat(startCoords).addTo(map);
+
+      // Create End Pin
+      const eEl = document.createElement('div');
+      eEl.className = 'pin pin-end';
+      eEl.innerText = 'DESTINATION';
+      endPin = new maplibregl.Marker(eEl).setLngLat(endCoords).addTo(map);
+
+      // Create Vehicle Pin based on selection
+      const vEl = document.createElement('div');
+      vEl.className = 'pin pin-vehicle';
+      vEl.innerText = vehicle === 'motorcycle' ? '🏍️' : vehicle === 'bus' ? '🚌' : vehicle === 'autorickshaw' ? '🛺' : '🚘';
+      vehiclePin = new maplibregl.Marker(vEl).setLngLat(startCoords).addTo(map);
+
+      currentStep = 0;
+      document.getElementById('btn-drive').style.display = 'block';
+
+      map.flyTo({ center: startCoords, zoom: 13 });
+    }
+
+    // 2. Drive vehicle along route
+    function simulateDrive() {
+      if (activeRoute.length === 0) return;
+      currentStep = (currentStep + 1) % activeRoute.length;
+      const nextPos = activeRoute[currentStep];
+
+      vehiclePin.setLngLat(nextPos);
+      map.flyTo({ center: nextPos, zoom: 14, speed: 0.8 });
+
+      const banner = document.getElementById('alert-banner');
+      if (currentStep === 1) {
+        banner.innerHTML = "🚧 <b>ROADWORK ALERT:</b> Metro Rail Work ahead. Lane merge active.";
+      } else if (currentStep === 2) {
+        banner.innerHTML = "⚠️ <b>PEDESTRIAN ZONE:</b> Signal AI prioritizing pedestrian crossing phase.";
+      } else if (currentStep === 3) {
+        banner.innerHTML = "🟢 <b>DESTINATION REACHED:</b> Arrived at target destination.";
+      } else {
+        banner.innerHTML = "⚠️ Metro Rail Work in 300m. Signal AI adjusting for lane merge.";
+      }
+    }
+
+    // 3. Sync Live Video AI Detection Data from python live_data.json
+    async function fetchLiveData() {
+      try {
+        const response = await fetch('https://smart-traffic-sginal.onrender.com/api/telemetry');
+        if (!response.ok) return;
+        const data = await response.json();
+
+        // Signal Green Time
+        const rawTimer = data.green_time ?? data.green_signal ?? data.timer ?? data.signal?.green_time;
+        if (rawTimer !== undefined && rawTimer !== null) {
+          const formattedTimer = typeof rawTimer === 'number' ? rawTimer.toFixed(1) : rawTimer;
+          document.getElementById('signal-timer').innerText = formattedTimer + "s GREEN";
+        }
+
+        // Signal Status Reason
+        const rawReason = data.route_status ?? data.status ?? data.reason ?? data.signal_reason;
+        if (rawReason) {
+          document.getElementById('signal-reason').innerText = rawReason;
+        }
+
+        // Vehicle & Pedestrian Counts
+        const vc = data.vehicle_counts || data.counts || data.detections || data;
+
+        document.getElementById('cnt-2w').innerText = (vc.motorcycle || 0) + (vc.bike || 0) + (vc['2-wheeler'] || 0) + (vc['2w'] || 0);
+        document.getElementById('cnt-4w').innerText = (vc.car || 0) + (vc.cars || 0) + (vc['4-wheeler'] || 0) + (vc['4w'] || 0);
+        document.getElementById('cnt-auto').innerText = (vc.autorickshaw || 0) + (vc.auto || 0) + (vc.rickshaw || 0);
+        document.getElementById('cnt-heavy').innerText = (vc.bus || 0) + (vc.buses || 0) + (vc.truck || 0) + (vc.trucks || 0);
+        document.getElementById('cnt-peds').innerText = (vc.pedestrian || 0) + (vc.pedestrians || 0) + (vc.person || 0) + (data.pedestrian_count || 0);
+
+      } catch (err) {}
+    }
+    // Register PWA Service Worker
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js')
+        .then(() => console.log('PWA Service Worker Registered'))
+        .catch(err => console.log('SW registration failed: ', err));
+    }
+  </script>
+</body>
+</html>
