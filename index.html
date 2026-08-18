@@ -220,20 +220,45 @@
     };
 
     let map, vehicleMarker, routeCoords = [];
-    let currentStep = 0;
-    let journeyStartTime, totalDistanceKm = 0, predictedEtaMins = 0;
+    let junctionIndex = 0; // 0 = Start, 1 = Junction 1, 2 = Junction 2, 3 = Arrival
+    let totalDistanceKm = 0, initialPredictedEtaMins = 0;
+    let accumulatedTravelTimeMins = 0;
 
-    // Traffic modes matching exact system specs
+    // Relative distance weight factors per segment (representing varying physical junction distances)
+    const segmentDistanceWeights = [0.9, 1.1, 1.0];
+
+    // Traffic modes matching specified delay ranges per junction
     const trafficProfiles = [
-      { id: "light", mode: "LIGHT", greenSecs: 15, text: "🟢 LIGHT TRAFFIC: 15s Green (PCU ≤ 7)", counts: { motorcycle: 4, car: 3, autorickshaw: 1, bus: 0 } },
-      { id: "moderate", mode: "MODERATE", greenSecs: 30, text: "🟡 MODERATE TRAFFIC: 30s Green (PCU 8-15)", counts: { motorcycle: 8, car: 7, autorickshaw: 3, bus: 1 } },
-      { id: "heavy", mode: "HEAVY", greenSecs: 45, text: "🔴 HEAVY CONGESTION: 45s Green (PCU > 15)", counts: { motorcycle: 18, car: 14, autorickshaw: 6, bus: 4 } },
-      { id: "emergency", mode: "EMERGENCY", greenSecs: 60, text: "🚨 EMERGENCY CLEARANCE: 60s Priority Override", counts: { motorcycle: 1, car: 1, autorickshaw: 0, bus: 0 } }
+      { id: "light", mode: "LIGHT", greenSecs: 15, baseMin: 5, baseMax: 7, text: "🟢 LIGHT TRAFFIC: 15s Green (PCU ≤ 7)", counts: { motorcycle: 4, car: 3, autorickshaw: 1, bus: 0 } },
+      { id: "moderate", mode: "MODERATE", greenSecs: 30, baseMin: 8, baseMax: 10, text: "🟡 MODERATE TRAFFIC: 30s Green (PCU 8-15)", counts: { motorcycle: 8, car: 7, autorickshaw: 3, bus: 1 } },
+      { id: "heavy", mode: "HEAVY", greenSecs: 45, baseMin: 10, baseMax: 15, text: "🔴 HEAVY CONGESTION: 45s Green (PCU > 15)", counts: { motorcycle: 18, car: 14, autorickshaw: 6, bus: 4 } },
+      { id: "emergency", mode: "EMERGENCY", greenSecs: 60, baseMin: 15, baseMax: 20, text: "🚨 EMERGENCY CLEARANCE: 60s Priority Override", counts: { motorcycle: 1, car: 1, autorickshaw: 0, bus: 0 } }
     ];
 
-    let currentProfileIdx = 1; // Default to Moderate
+    let currentProfileIdx = 1; // Default Moderate
     let simTimer = trafficProfiles[1].greenSecs;
     let simPhase = "GREEN";
+
+    // Dynamic calculation of current ETA based on remaining junctions and selected congestion mode
+    function recalculateOptimalETA() {
+      const remainingSegments = 3 - junctionIndex;
+      if (remainingSegments <= 0) {
+        document.getElementById('hud-eta').innerText = `${accumulatedTravelTimeMins} mins`;
+        return;
+      }
+
+      const activeProfile = trafficProfiles[currentProfileIdx];
+      let remainingEstimatedTime = 0;
+
+      for (let i = junctionIndex; i < 3; i++) {
+        const weight = segmentDistanceWeights[i];
+        const avgSegmentTime = ((activeProfile.baseMin + activeProfile.baseMax) / 2) * weight;
+        remainingEstimatedTime += avgSegmentTime;
+      }
+
+      const totalEstimatedETA = Math.round(accumulatedTravelTimeMins + remainingEstimatedTime);
+      document.getElementById('hud-eta').innerText = `${totalEstimatedETA} mins`;
+    }
 
     async function initiateNavigation() {
       const originStr = document.getElementById('origin-input').value.trim().toLowerCase();
@@ -242,11 +267,9 @@
       const start = knownCoords[originStr] || [80.2707, 13.0827];
       const end = knownCoords[destStr] || [80.2340, 13.0418];
 
-      // Switch screens
       document.getElementById('setup-page').style.display = 'none';
       document.getElementById('nav-page').style.display = 'flex';
 
-      // Initialize Map
       map = new maplibregl.Map({
         container: 'map',
         style: 'https://demotiles.maplibre.org/style.json',
@@ -263,13 +286,11 @@
           routeCoords = data.routes[0].geometry.coordinates;
           
           totalDistanceKm = (data.routes[0].distance / 1000).toFixed(1);
-          
-          const selectElem = document.getElementById('user-vehicle');
-          const avgSpeed = parseFloat(selectElem.options[selectElem.selectedIndex].dataset.speed);
-          predictedEtaMins = Math.round((totalDistanceKm / avgSpeed) * 60 + 3);
-
           document.getElementById('hud-distance').innerText = `${totalDistanceKm} km`;
-          document.getElementById('hud-eta').innerText = `${predictedEtaMins} mins`;
+
+          // Initial ETA under Moderate Baseline
+          initialPredictedEtaMins = Math.round(9 * 0.9 + 9 * 1.1 + 9 * 1.0);
+          recalculateOptimalETA();
 
           map.addSource('route', {
             'type': 'geojson',
@@ -290,7 +311,6 @@
           vEl.innerHTML = '🚘'; vEl.style.fontSize = '24px';
           vehicleMarker = new maplibregl.Marker(vEl).setLngLat(start).addTo(map);
 
-          journeyStartTime = Date.now();
           setInterval(syncTelemetry, 1000);
 
         } catch (err) {
@@ -299,50 +319,61 @@
       });
     }
 
-    // Trigger Congestion Mode
     function triggerMode(idx) {
       currentProfileIdx = idx;
       simPhase = "GREEN";
       simTimer = trafficProfiles[idx].greenSecs;
 
-      // Update button highlights
       document.querySelectorAll('.btn-demo').forEach(btn => btn.classList.remove('active'));
       const activeBtnId = ['btn-light', 'btn-moderate', 'btn-heavy', 'btn-emergency'][idx];
       document.getElementById(activeBtnId).classList.add('active');
 
-      // Update UI immediately
       const activeProfile = trafficProfiles[currentProfileIdx];
       updateSignalUI(simPhase, simTimer, activeProfile.text, activeProfile.counts);
+
+      // Instantly update remaining ETA when Congestion Mode is toggled
+      recalculateOptimalETA();
     }
 
     function moveToNextSignal() {
-      if (routeCoords.length === 0) return;
+      if (routeCoords.length === 0 || junctionIndex >= 3) return;
 
-      currentStep = Math.min(currentStep + Math.floor(routeCoords.length / 3), routeCoords.length - 1);
-      const nextPos = routeCoords[currentStep];
+      const activeProfile = trafficProfiles[currentProfileIdx];
+      const weight = segmentDistanceWeights[junctionIndex];
+      
+      // Calculate realistic variation per junction distance
+      const segmentTime = Math.round((activeProfile.baseMin + Math.random() * (activeProfile.baseMax - activeProfile.baseMin)) * weight);
+      accumulatedTravelTimeMins += segmentTime;
+
+      junctionIndex++;
+
+      const stepFraction = junctionIndex / 3;
+      const targetStepIdx = Math.min(Math.floor(routeCoords.length * stepFraction), routeCoords.length - 1);
+      const nextPos = routeCoords[targetStepIdx];
 
       vehicleMarker.setLngLat(nextPos);
       map.flyTo({ center: nextPos, zoom: 14 });
 
-      document.getElementById('step-info').innerText = `Junction ${Math.min(Math.floor(currentStep / (routeCoords.length/3)) + 1, 3)} of 3`;
+      if (junctionIndex < 3) {
+        document.getElementById('step-info').innerText = `At Junction ${junctionIndex} of 3 (+${segmentTime} mins taken)`;
+      } else {
+        document.getElementById('step-info').innerText = `Destination Reached!`;
+      }
 
-      if (currentStep >= routeCoords.length - 1) {
-        const actualTimeMins = Math.max(1, Math.round((Date.now() - journeyStartTime) / 60000));
-        showArrivalReport(actualTimeMins);
+      recalculateOptimalETA();
+
+      if (junctionIndex >= 3) {
+        showArrivalReport();
       }
     }
 
-    function showArrivalReport(actualTimeMins) {
-      const diff = actualTimeMins - predictedEtaMins;
-      let reasonText = "";
+    function showArrivalReport() {
+      const activeProfile = trafficProfiles[currentProfileIdx];
+      let reasonText = `⏱️ **Journey Completed in ${accumulatedTravelTimeMins} mins!**\n\n`;
+      reasonText += `**Current Traffic Mode:** ${activeProfile.mode}\n`;
+      reasonText += `**Average Segment Time:** ~${Math.round(accumulatedTravelTimeMins / 3)} mins/junction depending on distance & signal delays.`;
 
-      if (Math.abs(diff) <= 2) {
-        reasonText = `🎯 **Perfect Arrival!** Your journey took **${actualTimeMins} mins**, exactly matching the predicted optimal ETA.`;
-      } else {
-        reasonText = `⏱️ **Journey Completed:** Travel time took **${actualTimeMins} mins** (Predicted: ${predictedEtaMins} mins).\n\n**Adaptive Factors:** High volume of heavy vehicles created moderate PCU queue delays at intermediate intersections.`;
-      }
-
-      document.getElementById('report-text').innerText = reasonText;
+      document.getElementById('report-text').innerHTML = reasonText.replace(/\n/g, '<br>');
       document.getElementById('arrival-modal').style.display = 'flex';
     }
 
@@ -356,7 +387,7 @@
         }
       } catch (err) {}
 
-      // Fallback local simulation logic
+      // Fallback local simulation
       simTimer--;
       if (simTimer <= 0) {
         if (simPhase === "GREEN") { 
@@ -373,6 +404,8 @@
           document.querySelectorAll('.btn-demo').forEach(btn => btn.classList.remove('active'));
           const activeBtnId = ['btn-light', 'btn-moderate', 'btn-heavy', 'btn-emergency'][currentProfileIdx];
           document.getElementById(activeBtnId).classList.add('active');
+
+          recalculateOptimalETA();
         }
       }
 
