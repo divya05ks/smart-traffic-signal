@@ -103,6 +103,19 @@
       background: #1e293b; border: 1px solid #334155; border-radius: 16px; padding: 24px;
       max-width: 420px; width: 100%; display: flex; flex-direction: column; gap: 14px;
     }
+
+    /* MAP POPUP STYLING FOR CONSTRUCTION INDICATOR */
+    .maplibregl-popup-content {
+      background: #1e293b !important;
+      color: #f8fafc !important;
+      border: 1px solid #334155;
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: 12px;
+    }
+    .maplibregl-popup-anchor-bottom .maplibregl-popup-tip {
+      border-top-color: #1e293b !important;
+    }
   </style>
 </head>
 <body>
@@ -308,8 +321,64 @@
           new maplibregl.Marker({ color: '#ef4444' }).setLngLat(end).addTo(map);
 
           const vEl = document.createElement('div');
-          vEl.innerHTML = '🚘'; vEl.style.fontSize = '24px';
+          vEl.innerHTML = '🚗'; vEl.style.fontSize = '24px';
           vehicleMarker = new maplibregl.Marker(vEl).setLngLat(start).addTo(map);
+
+          /* ============================================================
+             CUSTOM STREET LAYOUT & ROADWORK/CONSTRUCTION OVERLAYS
+             ============================================================ */
+
+          // 1. Calculate an intermediate point on the route for the construction zone
+          const midIdx = Math.floor(routeCoords.length / 2);
+          const constructionPos = routeCoords[midIdx] || [(start[0] + end[0]) / 2, (start[1] + end[1]) / 2];
+
+          // 2. Add Construction Indicator Marker
+          const constrEl = document.createElement('div');
+          constrEl.innerHTML = '🚧';
+          constrEl.style.fontSize = '26px';
+          constrEl.style.cursor = 'pointer';
+
+          const constrPopup = new maplibregl.Popup({ offset: 25 }).setHTML(`
+            <strong style="color: #f59e0b;">🚧 Roadwork Ahead</strong><br>
+            Speed reduced. ASTC adaptive phase active.
+          `);
+
+          new maplibregl.Marker(constrEl)
+            .setLngLat(constructionPos)
+            .setPopup(constrPopup)
+            .addTo(map);
+
+          // 3. Add Custom Construction Detour/Street Line Overlay
+          const detourStart = routeCoords[Math.max(0, midIdx - 3)] || start;
+          const detourEnd = routeCoords[Math.min(routeCoords.length - 1, midIdx + 3)] || end;
+
+          map.addSource('construction-detour', {
+            'type': 'geojson',
+            'data': {
+              'type': 'Feature',
+              'geometry': {
+                'type': 'LineString',
+                'coordinates': [
+                  detourStart,
+                  [constructionPos[0] + 0.003, constructionPos[1] + 0.003], // Curved detour street
+                  detourEnd
+                ]
+              }
+            }
+          });
+
+          map.addLayer({
+            'id': 'detour-line',
+            'type': 'line',
+            'source': 'construction-detour',
+            'paint': {
+              'line-color': '#f59e0b', // Amber/Orange construction color
+              'line-width': 4,
+              'line-dasharray': [2, 2] // Dashed work zone street
+            }
+          });
+
+          /* ============================================================ */
 
           setInterval(syncTelemetry, 1000);
 
