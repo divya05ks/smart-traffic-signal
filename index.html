@@ -148,7 +148,7 @@
           <div class="light-circle light-red" id="light-red"></div>
           <div class="light-circle light-yellow" id="light-yellow"></div>
           <div class="light-circle light-green" id="light-green"></div>
-          <div class="timer-text" id="signal-status">30s GREEN</div>
+          <div class="timer-text" id="signal-status">15s GREEN</div>
         </div>
 
         <div style="font-size: 12px; color: #cbd5e1;" id="route-status">Initializing AI adaptive phase...</div>
@@ -181,7 +181,6 @@
 
   <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
   <script>
-    // Set this to your actual Render backend URL if running live, or keep /api/telemetry
     const BACKEND_URL = "/api/telemetry"; 
 
     const knownCoords = {
@@ -197,8 +196,16 @@
     let currentStep = 0;
     let journeyStartTime, totalDistanceKm = 0, predictedEtaMins = 0;
 
-    // Signal state fallback variables for live UI continuous ticking
-    let simTimer = 30;
+    // Local simulation traffic profiles matching exact rules
+    const trafficProfiles = [
+      { mode: "LIGHT", greenSecs: 15, text: "🟢 LIGHT TRAFFIC: 15s Green", counts: { motorcycle: 4, car: 3, autorickshaw: 1, bus: 0 } },
+      { mode: "MODERATE", greenSecs: 30, text: "🟡 MODERATE TRAFFIC: 30s Green", counts: { motorcycle: 8, car: 7, autorickshaw: 3, bus: 1 } },
+      { mode: "HEAVY", greenSecs: 45, text: "🔴 HEAVY CONGESTION: 45s Green", counts: { motorcycle: 18, car: 14, autorickshaw: 6, bus: 4 } },
+      { mode: "EMERGENCY", greenSecs: 60, text: "🚨 EMERGENCY CLEARANCE: 60s Override", counts: { motorcycle: 2, car: 2, autorickshaw: 0, bus: 0 } }
+    ];
+
+    let currentProfileIdx = 0;
+    let simTimer = trafficProfiles[0].greenSecs;
     let simPhase = "GREEN";
 
     async function initiateNavigation() {
@@ -221,7 +228,6 @@
       });
 
       map.on('load', async () => {
-        // Fetch Real OSRM Road Route
         const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${start[0]},${start[1]};${end[0]},${end[1]}?overview=full&geometries=geojson`;
         
         try {
@@ -307,19 +313,28 @@
         }
       } catch (err) {}
 
-      // Fallback local simulation tick so Red/Yellow/Green & Counts work continuously
+      // Fallback local simulation adhering strictly to dynamic rules
       simTimer--;
       if (simTimer <= 0) {
-        if (simPhase === "GREEN") { simPhase = "YELLOW"; simTimer = 5; }
-        else if (simPhase === "YELLOW") { simPhase = "RED"; simTimer = 15; }
-        else { simPhase = "GREEN"; simTimer = 30; }
+        if (simPhase === "GREEN") { 
+          simPhase = "YELLOW"; 
+          simTimer = 5; 
+        } else if (simPhase === "YELLOW") { 
+          simPhase = "RED"; 
+          simTimer = 15; 
+        } else { 
+          simPhase = "GREEN"; 
+          currentProfileIdx = (currentProfileIdx + 1) % trafficProfiles.length;
+          simTimer = trafficProfiles[currentProfileIdx].greenSecs; 
+        }
       }
 
+      const activeProfile = trafficProfiles[currentProfileIdx];
       updateSignalUI(
         simPhase, 
         simTimer, 
-        "🧠 ADAPTIVE AI: Active Traffic Optimization", 
-        { motorcycle: 8, car: 12, autorickshaw: 4, bus: 2 }
+        activeProfile.text, 
+        activeProfile.counts
       );
     }
 
