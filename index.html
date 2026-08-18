@@ -40,6 +40,22 @@
     #nav-page { display: none; height: 100vh; flex-direction: column; position: relative; }
     #map { flex: 1; width: 100%; }
 
+    /* JUDGES DEMO CONTROLLER TOOLBAR (TOP-LEFT) */
+    .demo-bar {
+      position: absolute; top: 16px; left: 16px; background: rgba(15, 23, 42, 0.95);
+      backdrop-filter: blur(8px); border: 1px solid #334155; border-radius: 12px;
+      padding: 10px 14px; z-index: 30; display: flex; flex-direction: column; gap: 8px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+    }
+    .demo-title { font-size: 10px; font-weight: 800; color: #38bdf8; text-transform: uppercase; letter-spacing: 0.5px; }
+    .demo-btn-group { display: flex; gap: 6px; }
+    .btn-demo {
+      background: #334155; color: #f8fafc; border: 1px solid #475569; padding: 6px 10px;
+      border-radius: 6px; font-size: 11px; font-weight: 700; cursor: pointer; transition: all 0.2s;
+    }
+    .btn-demo:hover { background: #0284c7; border-color: #38bdf8; }
+    .btn-demo.active { background: #0284c7; border-color: #38bdf8; color: white; }
+
     /* Top Right Floating HUD (Distance & Dynamic Optimal ETA) */
     .hud-top-right {
       position: absolute; top: 16px; right: 16px; background: rgba(15, 23, 42, 0.95);
@@ -122,6 +138,17 @@
 
   <!-- PAGE 2: MAP & LIVE CONTROLS -->
   <div id="nav-page">
+    <!-- JUDGES DEMO CONTROLLER (Simulate Any AI Traffic Mode) -->
+    <div class="demo-bar">
+      <div class="demo-title">⚡ Judges Demo: Trigger AI Mode</div>
+      <div class="demo-btn-group">
+        <button class="btn-demo" id="btn-light" onclick="triggerMode(0)">🟢 Light (15s)</button>
+        <button class="btn-demo active" id="btn-moderate" onclick="triggerMode(1)">🟡 Moderate (30s)</button>
+        <button class="btn-demo" id="btn-heavy" onclick="triggerMode(2)">🔴 Heavy (45s)</button>
+        <button class="btn-demo" id="btn-emergency" onclick="triggerMode(3)">🚨 Emergency (60s)</button>
+      </div>
+    </div>
+
     <!-- Top Right Floating HUD (Distance & ETA) -->
     <div class="hud-top-right">
       <div class="hud-metric">
@@ -148,7 +175,7 @@
           <div class="light-circle light-red" id="light-red"></div>
           <div class="light-circle light-yellow" id="light-yellow"></div>
           <div class="light-circle light-green" id="light-green"></div>
-          <div class="timer-text" id="signal-status">15s GREEN</div>
+          <div class="timer-text" id="signal-status">30s GREEN</div>
         </div>
 
         <div style="font-size: 12px; color: #cbd5e1;" id="route-status">Initializing AI adaptive phase...</div>
@@ -196,16 +223,16 @@
     let currentStep = 0;
     let journeyStartTime, totalDistanceKm = 0, predictedEtaMins = 0;
 
-    // Local simulation traffic profiles matching exact rules
+    // Traffic modes matching exact system specs
     const trafficProfiles = [
-      { mode: "LIGHT", greenSecs: 15, text: "🟢 LIGHT TRAFFIC: 15s Green", counts: { motorcycle: 4, car: 3, autorickshaw: 1, bus: 0 } },
-      { mode: "MODERATE", greenSecs: 30, text: "🟡 MODERATE TRAFFIC: 30s Green", counts: { motorcycle: 8, car: 7, autorickshaw: 3, bus: 1 } },
-      { mode: "HEAVY", greenSecs: 45, text: "🔴 HEAVY CONGESTION: 45s Green", counts: { motorcycle: 18, car: 14, autorickshaw: 6, bus: 4 } },
-      { mode: "EMERGENCY", greenSecs: 60, text: "🚨 EMERGENCY CLEARANCE: 60s Override", counts: { motorcycle: 2, car: 2, autorickshaw: 0, bus: 0 } }
+      { id: "light", mode: "LIGHT", greenSecs: 15, text: "🟢 LIGHT TRAFFIC: 15s Green (PCU ≤ 7)", counts: { motorcycle: 4, car: 3, autorickshaw: 1, bus: 0 } },
+      { id: "moderate", mode: "MODERATE", greenSecs: 30, text: "🟡 MODERATE TRAFFIC: 30s Green (PCU 8-15)", counts: { motorcycle: 8, car: 7, autorickshaw: 3, bus: 1 } },
+      { id: "heavy", mode: "HEAVY", greenSecs: 45, text: "🔴 HEAVY CONGESTION: 45s Green (PCU > 15)", counts: { motorcycle: 18, car: 14, autorickshaw: 6, bus: 4 } },
+      { id: "emergency", mode: "EMERGENCY", greenSecs: 60, text: "🚨 EMERGENCY CLEARANCE: 60s Priority Override", counts: { motorcycle: 1, car: 1, autorickshaw: 0, bus: 0 } }
     ];
 
-    let currentProfileIdx = 0;
-    let simTimer = trafficProfiles[0].greenSecs;
+    let currentProfileIdx = 1; // Default to Moderate
+    let simTimer = trafficProfiles[1].greenSecs;
     let simPhase = "GREEN";
 
     async function initiateNavigation() {
@@ -272,6 +299,22 @@
       });
     }
 
+    // Interactive Demo Trigger Function
+    function triggerMode(idx) {
+      currentProfileIdx = idx;
+      simPhase = "GREEN";
+      simTimer = trafficProfiles[idx].greenSecs;
+
+      // Update button highlights
+      document.querySelectorAll('.btn-demo').forEach(btn => btn.classList.remove('active'));
+      const activeBtnId = ['btn-light', 'btn-moderate', 'btn-heavy', 'btn-emergency'][idx];
+      document.getElementById(activeBtnId).classList.add('active');
+
+      // Update UI immediately
+      const activeProfile = trafficProfiles[currentProfileIdx];
+      updateSignalUI(simPhase, simTimer, activeProfile.text, activeProfile.counts);
+    }
+
     function moveToNextSignal() {
       if (routeCoords.length === 0) return;
 
@@ -313,7 +356,7 @@
         }
       } catch (err) {}
 
-      // Fallback local simulation adhering strictly to dynamic rules
+      // Fallback local simulation logic
       simTimer--;
       if (simTimer <= 0) {
         if (simPhase === "GREEN") { 
@@ -324,8 +367,13 @@
           simTimer = 15; 
         } else { 
           simPhase = "GREEN"; 
+          // Auto cycle to next mode if user doesn't press demo buttons
           currentProfileIdx = (currentProfileIdx + 1) % trafficProfiles.length;
           simTimer = trafficProfiles[currentProfileIdx].greenSecs; 
+
+          document.querySelectorAll('.btn-demo').forEach(btn => btn.classList.remove('active'));
+          const activeBtnId = ['btn-light', 'btn-moderate', 'btn-heavy', 'btn-emergency'][currentProfileIdx];
+          document.getElementById(activeBtnId).classList.add('active');
         }
       }
 
