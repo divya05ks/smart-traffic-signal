@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>M-MASS Adaptive Navigation</title>
+  <title>ASTC Adaptive Navigation</title>
   <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet" />
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
@@ -40,7 +40,7 @@
     #nav-page { display: none; height: 100vh; flex-direction: column; position: relative; }
     #map { flex: 1; width: 100%; }
 
-    /* JUDGES DEMO CONTROLLER TOOLBAR (TOP-LEFT) */
+    /* CONGESTION MODES TOOLBAR (TOP-LEFT) */
     .demo-bar {
       position: absolute; top: 16px; left: 16px; background: rgba(15, 23, 42, 0.95);
       backdrop-filter: blur(8px); border: 1px solid #334155; border-radius: 12px;
@@ -110,7 +110,7 @@
   <!-- PAGE 1: SETUP FORM -->
   <div id="setup-page">
     <div class="setup-card">
-      <div class="brand">🚦 M-MASS <span>ADAPTIVE AI</span></div>
+      <div class="brand">🚦 ASTC <span>ADAPTIVE AI</span></div>
       
       <div class="form-group">
         <label>1. Select Vehicle Type</label>
@@ -138,9 +138,9 @@
 
   <!-- PAGE 2: MAP & LIVE CONTROLS -->
   <div id="nav-page">
-    <!-- JUDGES DEMO CONTROLLER (Simulate Any AI Traffic Mode) -->
+    <!-- CONGESTION MODES TOOLBAR -->
     <div class="demo-bar">
-      <div class="demo-title">⚡ Judges Demo: Trigger AI Mode</div>
+      <div class="demo-title">⚡ Congestion Modes</div>
       <div class="demo-btn-group">
         <button class="btn-demo" id="btn-light" onclick="triggerMode(0)">🟢 Light (15s)</button>
         <button class="btn-demo active" id="btn-moderate" onclick="triggerMode(1)">🟡 Moderate (30s)</button>
@@ -299,7 +299,7 @@
       });
     }
 
-    // Interactive Demo Trigger Function
+    // Trigger Congestion Mode
     function triggerMode(idx) {
       currentProfileIdx = idx;
       simPhase = "GREEN";
@@ -367,7 +367,6 @@
           simTimer = 15; 
         } else { 
           simPhase = "GREEN"; 
-          // Auto cycle to next mode if user doesn't press demo buttons
           currentProfileIdx = (currentProfileIdx + 1) % trafficProfiles.length;
           simTimer = trafficProfiles[currentProfileIdx].greenSecs; 
 
